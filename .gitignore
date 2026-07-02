@@ -1,0 +1,28 @@
+# Build
+cpp/build/
+build/
+out/
+CMakeUserPresets.json
+
+# vcpkg
+vcpkg_installed/
+
+# Data (never commit market data)
+data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# IDE / OS
+.vs/
+.vscode/
+.idea/
+Thumbs.db
+
+# Local
+.claude/
+*.docx
