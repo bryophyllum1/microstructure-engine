@@ -1,5 +1,6 @@
-// feed_dump: connect to Binance, drive the order book with live data, and
-// print signals once per second. Smoke-test for the feed + book pipeline.
+// feed_dump: connect to Binance and run the full pipeline —
+// feed I/O thread → SPSC queue → compute thread (order book + signals) —
+// printing a monitoring line once per second.
 //
 // Usage: feed_dump [symbol] [seconds]   (defaults: btcusdt, 10)
 
@@ -7,12 +8,12 @@
 #include <chrono>
 #include <csignal>
 #include <cstdio>
-#include <mutex>
+#include <cstdlib>
 #include <string>
 #include <thread>
 
 #include "msengine/binance_feed.hpp"
-#include "msengine/order_book.hpp"
+#include "msengine/pipeline.hpp"
 
 using namespace msengine;
 
@@ -27,12 +28,6 @@ int main(int argc, char** argv) {
 
     std::signal(SIGINT, on_sigint);
 
-    // Temporary: mutex-guarded book until the SPSC queue lands (Feature 3).
-    // The callback runs on the feed's I/O thread; main reads for display.
-    OrderBook book;
-    std::mutex book_mu;
-    std::atomic<std::uint64_t> updates{0};
-
     BinanceFeed feed(symbol);
     feed.on_state([](FeedState s) {
         const char* name = s == FeedState::Connected     ? "CONNECTED"
@@ -40,36 +35,44 @@ int main(int argc, char** argv) {
                                                          : "DISCONNECTED";
         std::printf("[feed] %s\n", name);
     });
-    feed.on_depth([&](DepthUpdate&& u) {
-        std::lock_guard lock(book_mu);
-        book.apply_snapshot(std::move(u.bids), std::move(u.asks));
-        updates.fetch_add(1, std::memory_order_relaxed);
-    });
 
-    std::printf("Connecting to Binance %s depth stream for %d seconds...\n",
+    MarketDataPipeline pipeline;
+    pipeline.start(feed);  // wires depth handler + starts compute thread
+
+    std::printf("Streaming %s for %d seconds (io thread -> spsc -> compute thread)\n",
                 symbol.c_str(), run_seconds);
     feed.connect();
 
     const auto deadline =
         std::chrono::steady_clock::now() + std::chrono::seconds(run_seconds);
+    const double scale = static_cast<double>(PRICE_SCALE);
+
     while (!g_stop.load() && std::chrono::steady_clock::now() < deadline) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
 
-        std::lock_guard lock(book_mu);
-        if (book.empty()) {
+        const SignalSnapshot& s = pipeline.signals();
+        const std::uint64_t updates = s.updates.load(std::memory_order_relaxed);
+        if (updates == 0) {
             std::printf("  (no data yet)\n");
             continue;
         }
-        const double scale = static_cast<double>(PRICE_SCALE);
         std::printf(
-            "  mid=%.2f spread=%.2f imbalance(top5)=%+.3f updates=%llu\n",
-            *book.mid_price() / scale, *book.spread() / scale,
-            *book.imbalance(5),
-            static_cast<unsigned long long>(updates.load()));
+            "  mid=%.2f spread=%.2f imbalance(top5)=%+.3f updates=%llu "
+            "dropped=%llu qdepth=%zu\n",
+            s.mid_price.load(std::memory_order_relaxed) / scale,
+            s.spread.load(std::memory_order_relaxed) / scale,
+            s.imbalance_top5.load(std::memory_order_relaxed),
+            static_cast<unsigned long long>(updates),
+            static_cast<unsigned long long>(s.dropped.load(std::memory_order_relaxed)),
+            pipeline.queue_depth());
     }
 
     feed.disconnect();
-    std::printf("Done. %llu total updates.\n",
-                static_cast<unsigned long long>(updates.load()));
+    pipeline.stop();
+
+    const SignalSnapshot& s = pipeline.signals();
+    std::printf("Done. %llu updates processed, %llu dropped.\n",
+                static_cast<unsigned long long>(s.updates.load()),
+                static_cast<unsigned long long>(s.dropped.load()));
     return 0;
 }

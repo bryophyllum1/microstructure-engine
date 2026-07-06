@@ -43,6 +43,7 @@ enable_testing()
 add_executable(msengine_tests
     tests/order_book_test.cpp
     tests/binance_parser_test.cpp
+    tests/spsc_queue_test.cpp
 )
 target_link_libraries(msengine_tests PRIVATE msengine_core GTest::gtest_main)
 
