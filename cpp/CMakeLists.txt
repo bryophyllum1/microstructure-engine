@@ -5,7 +5,9 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(MSVC)
-    add_compile_options(/W4 /permissive-)
+    # C4324: "structure was padded due to alignment specifier" — the padding
+    # in SpscQueue is intentional (false-sharing protection).
+    add_compile_options(/W4 /permissive- /wd4324)
 else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
@@ -44,6 +46,7 @@ add_executable(msengine_tests
     tests/order_book_test.cpp
     tests/binance_parser_test.cpp
     tests/spsc_queue_test.cpp
+    tests/signal_engine_test.cpp
 )
 target_link_libraries(msengine_tests PRIVATE msengine_core GTest::gtest_main)
 

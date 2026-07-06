@@ -57,10 +57,13 @@ int main(int argc, char** argv) {
             continue;
         }
         std::printf(
-            "  mid=%.2f spread=%.2f imbalance(top5)=%+.3f updates=%llu "
-            "dropped=%llu qdepth=%zu\n",
+            "  mid=%.2f vwap5s=%.2f mom5s=%+.5f%% spread=%.2f sprvol=%.4f "
+            "imb=%+.3f updates=%llu dropped=%llu qdepth=%zu\n",
             s.mid_price.load(std::memory_order_relaxed) / scale,
+            s.vwap.load(std::memory_order_relaxed) / scale,
+            s.momentum.load(std::memory_order_relaxed) * 100.0,
             s.spread.load(std::memory_order_relaxed) / scale,
+            s.spread_vol.load(std::memory_order_relaxed) / scale,
             s.imbalance_top5.load(std::memory_order_relaxed),
             static_cast<unsigned long long>(updates),
             static_cast<unsigned long long>(s.dropped.load(std::memory_order_relaxed)),
