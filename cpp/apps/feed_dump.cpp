@@ -2,7 +2,8 @@
 // feed I/O thread → SPSC queue → compute thread (order book + signals) —
 // printing a monitoring line once per second.
 //
-// Usage: feed_dump [symbol] [seconds]   (defaults: btcusdt, 10)
+// Usage: feed_dump [symbol] [seconds] [outfile.msef]
+// (defaults: btcusdt, 10, no recording)
 
 #include <atomic>
 #include <chrono>
@@ -12,7 +13,10 @@
 #include <string>
 #include <thread>
 
+#include <memory>
+
 #include "msengine/binance_feed.hpp"
+#include "msengine/persister.hpp"
 #include "msengine/pipeline.hpp"
 
 using namespace msengine;
@@ -37,6 +41,15 @@ int main(int argc, char** argv) {
     });
 
     MarketDataPipeline pipeline;
+
+    std::unique_ptr<FeatureWriter> writer;
+    if (argc > 3) {
+        writer = std::make_unique<FeatureWriter>(argv[3]);
+        pipeline.set_feature_sink(
+            [&w = *writer](const FeatureRow& row) { w.submit(row); });
+        std::printf("Recording features to %s\n", argv[3]);
+    }
+
     pipeline.start(feed);  // wires depth handler + starts compute thread
 
     std::printf("Streaming %s for %d seconds (io thread -> spsc -> compute thread)\n",
@@ -77,5 +90,11 @@ int main(int argc, char** argv) {
     std::printf("Done. %llu updates processed, %llu dropped.\n",
                 static_cast<unsigned long long>(s.updates.load()),
                 static_cast<unsigned long long>(s.dropped.load()));
+    if (writer) {
+        writer->stop();
+        std::printf("Recorded %llu feature rows (%llu dropped).\n",
+                    static_cast<unsigned long long>(writer->rows_written()),
+                    static_cast<unsigned long long>(writer->rows_dropped()));
+    }
     return 0;
 }

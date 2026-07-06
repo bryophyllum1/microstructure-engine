@@ -19,6 +19,7 @@ find_package(simdjson CONFIG REQUIRED)
 add_library(msengine_core
     src/order_book.cpp
     src/binance_feed.cpp
+    src/persister.cpp
 )
 target_include_directories(msengine_core PUBLIC include)
 target_link_libraries(msengine_core PUBLIC ixwebsocket::ixwebsocket simdjson::simdjson)
@@ -47,6 +48,8 @@ add_executable(msengine_tests
     tests/binance_parser_test.cpp
     tests/spsc_queue_test.cpp
     tests/signal_engine_test.cpp
+    tests/persister_test.cpp
+    tests/pipeline_integration_test.cpp
 )
 target_link_libraries(msengine_tests PRIVATE msengine_core GTest::gtest_main)
 
